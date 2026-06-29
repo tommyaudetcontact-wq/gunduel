@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Prototype V8 - Correction Direction Canon</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #121212;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            color: #ffffff;
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .game-area {
+            position: relative;
+            background: #09090e;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            border: 2px solid #333;
+        }
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            object-fit: cover;
+            opacity: 0.20;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .gun {
+            position: absolute;
+            width: 240px;
+            height: 140px;
+            z-index: 10;
+            transform-origin: center center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 110px;
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+        /* RETOURNEMENT DE L'ÉMOJI POUR QU'IL POINTE VERS LA DROITE À 0 DEGRÉ */
+        .gun-render {
+            transform: scaleX(-1);
+            display: inline-block;
+        }
+        .bullet {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #ffc107, 0 0 25px #ff4136;
+            z-index: 9;
+            pointer-events: none;
+        }
+        .bullet-trail {
+            position: absolute;
+            background: linear-gradient(to left, rgba(255, 193, 7, 0.9), rgba(255, 65, 54, 0));
+            height: 8px;
+            border-radius: 4px;
+            transform-origin: left center;
+            z-index: 8;
+            pointer-events: none;
+        }
+        .explosion-particle {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #fff, #ffc107, #ff4136);
+            box-shadow: 0 0 15px #ff4136;
+            z-index: 15;
+            pointer-events: none;
+        }
+        .hand-cursor {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            z-index: 12;
+            pointer-events: none;
+            display: none;
+            border: 3px solid #fff;
+        }
+        .color-p1 { background: #0dcaf0; box-shadow: 0 0 20px #0dcaf0; }
+        .color-p2 { background: #ff4136; box-shadow: 0 0 20px #ff4136; }
+        
+        #loadingOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(13, 13, 26, 0.95);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-area" id="mainStage">
+        <div id="loadingOverlay">
+            <div id="spinner" class="spinner-border text-warning mb-3" role="status"></div>
+            <h3 id="statusText" class="fw-bold mb-4">Correction de l'orientation du canon...</h3>
+            <button id="btnStart" class="btn btn-warning btn-lg fw-bold d-none px-4 py-3">LANCER LE MATCH</button>
+        </div>
+
+        <video id="webcam" autoplay playsinline></video>
+        
+        <div id="gun0" class="gun"><span class="gun-render">🔫</span></div>
+        <div id="gun1" class="gun"><span class="gun-render">🔫</span></div>
+
+        <div id="hand0" class="hand-cursor color-p1"></div>
+        <div id="hand1" class="hand-cursor color-p2"></div>
+    </div>
+
+    <script type="module">
+        import { FilesetResolver, HandLandmarker } from "https://unpkg.com/@mediapipe/tasks-vision@0.10.8/vision_bundle.mjs";
+
+        const video = document.getElementById('webcam');
+        const mainStage = document.getElementById('mainStage');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const statusText = document.getElementById('statusText');
+        const spinner = document.getElementById('spinner');
+        const btnStart = document.getElementById('btnStart');
+        
+        const gunElements = [document.getElementById('gun0'), document.getElementById('gun1')];
+        const handElements = [document.getElementById('hand0'), document.getElementById('hand1')];
+
+        let handLandmarker = undefined;
+        let lastVideoTime = -1;
+        let lastHandsData = [];
+        let isRunning = false;
+        let isMatchOver = false;
+
+        let GAME_WIDTH = 800;
+        let GAME_HEIGHT = 450;
+        
+        const GRAVITY = 0.12; 
+        const BOUNCE = -0.65; 
+        const RECOIL_FORCE = 13; 
+        const MAX_ROTATION_SPEED = 35; 
+        const ROTATION_FRICTION = 0.95; 
+
+        let guns = [];
+        let bullets = [];
+        let trails = []; 
+        let particles = []; 
+        
+        let playersState = [
+            { triggerReady: true, cooldown: 0 },
+            { triggerReady: true, cooldown: 0 }
+        ];
+
+        function initGuns() {
+            // J1 pointe vers la droite (0°), J2 pointe vers la gauche (180°)
+            guns = [
+                { id: 0, x: 150, y: 200, vx: 1, vy: 0, angle: 0, vAngle: 0, width: 240, height: 140, alive: true },
+                { id: 1, x: 650, y: 200, vx: -1, vy: 0, angle: 180, vAngle: 0, width: 240, height: 140, alive: true }
+            ];
+            bullets = [];
+            trails = [];
+            particles = [];
+            isMatchOver = false;
+            gunElements[0].style.opacity = "1";
+            gunElements[1].style.opacity = "1";
+        }
+
+        function resizeResponsiveStage() {
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+
+            if (screenW / screenH > 16 / 9) {
+                GAME_HEIGHT = screenH * 0.95; 
+                GAME_WIDTH = GAME_HEIGHT * (16 / 9);
+            } else {
+                GAME_WIDTH = screenW * 0.95;
+                GAME_HEIGHT = GAME_WIDTH / (16 / 9);
+            }
+
+            mainStage.style.width = `${GAME_WIDTH}px`;
+            mainStage.style.height = `${GAME_HEIGHT}px`;
+        }
+
+        resizeResponsiveStage();
+        window.addEventListener('resize', resizeResponsiveStage);
+
+        async function initIA() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks("https://unpkg.com/@mediapipe/tasks-vision@0.10.8/wasm");
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 2,
+                    minHandDetectionConfidence: 0.45,
+                    minHandPresenceConfidence: 0.45
+                });
+                if(spinner) spinner.classList.add('d-none');
+                if(statusText) statusText.innerText = "Alignement du canon corrigé !";
+                if(btnStart) btnStart.classList.remove('d-none');
+            } catch (err) {
+                if(statusText) statusText.innerText = "Erreur IA : " + err;
+            }
+        }
+
+        btnStart.addEventListener('click', async () => {
+            btnStart.classList.add('d-none');
+            if(spinner) spinner.classList.remove('d-none');
+            statusText.innerText = "Démarrage caméra...";
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 320, height: 240, frameRate: { ideal: 30 } } 
+                });
+                video.srcObject = stream;
+                video.addEventListener('loadeddata', () => {
+                    if(loadingOverlay) loadingOverlay.classList.add('d-none');
+                    initGuns();
+                    isRunning = true;
+                    requestAnimationFrame(gameLoop);
+                });
+            } catch (err) {
+                alert("Impossible d'accéder à la webcam.");
+            }
+        });
+
+        function explodeGun(gun) {
+            gun.alive = false;
+            gunElements[gun.id].style.opacity = "0"; 
+            for (let i = 0; i < 45; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 3 + Math.random() * 8;
+                particles.push({
+                    x: gun.x,
+                    y: gun.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    alpha: 1.0,
+                    size: 8 + Math.random() * 12
+                });
+            }
+        }
+
+        function triggerWin(winnerIndex) {
+            isMatchOver = true;
+            if(loadingOverlay) loadingOverlay.classList.remove('d-none');
+            if(spinner) spinner.classList.add('d-none');
+            
+            const couleurText = winnerIndex === 0 ? "text-info" : "text-danger";
+            if(statusText) statusText.innerHTML = `<span class='${couleurText} display-4 fw-bold'>🏆 LE JOUEUR ${winnerIndex + 1} REMPORTE LE DUEL ! 🏆</span><br><small class='text-muted'>Nouveau round dans 3 secondes...</small>`;
+
+            setTimeout(() => {
+                initGuns();
+                if(loadingOverlay) loadingOverlay.classList.add('d-none');
+            }, 3000);
+        }
+
+        function gameLoop() {
+            if (!isRunning) return;
+
+            if (video.currentTime !== lastVideoTime && handLandmarker && !isMatchOver) {
+                lastVideoTime = video.currentTime;
+                try {
+                    const detections = handLandmarker.detectForVideo(video, performance.now());
+                    if (detections && detections.landmarks) {
+                        lastHandsData = detections.landmarks;
+                    }
+                } catch(e) {}
+            }
+
+            // --- PHYSIQUE DES FUSILS ---
+            guns.forEach((gun, idx) => {
+                if (!gun.alive) return;
+
+                gun.vy += GRAVITY;
+                gun.x += gun.vx;
+                gun.y += gun.vy;
+                
+                gun.angle += gun.vAngle;
+                gun.vAngle *= ROTATION_FRICTION; 
+
+                if (gun.x - gun.width/2 < 0) { gun.x = gun.width/2; gun.vx *= BOUNCE; }
+                else if (gun.x + gun.width/2 > GAME_WIDTH) { gun.x = GAME_WIDTH - gun.width/2; gun.vx *= BOUNCE; }
+
+                if (gun.y - gun.height/2 < 0) { gun.y = gun.height/2; gun.vy *= BOUNCE; }
+                else if (gun.y + gun.height/2 > GAME_HEIGHT) { gun.y = GAME_HEIGHT - gun.height/2; gun.vy *= BOUNCE; }
+
+                gunElements[idx].style.left = `${gun.x - gun.width/2}px`;
+                gunElements[idx].style.top = `${gun.y - gun.height/2}px`;
+                // Application de la rotation propre
+                gunElements[idx].style.transform = `rotate(${gun.angle}deg)`;
+            });
+
+            // --- NETTOYAGE ---
+            document.querySelectorAll('.bullet').forEach(b => b.remove());
+            document.querySelectorAll('.bullet-trail').forEach(t => t.remove());
+            document.querySelectorAll('.explosion-particle').forEach(p => p.remove());
+
+            // --- PARTICULES ---
+            particles = particles.filter(p => {
+                p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.alpha -= 0.02;
+                if (p.alpha <= 0) return false;
+
+                const pEl = document.createElement('div');
+                pEl.className = 'explosion-particle';
+                pEl.style.width = `${p.size}px`; pEl.style.height = `${p.size}px`;
+                pEl.style.left = `${p.x}px`; pEl.style.top = `${p.y}px`;
+                pEl.style.opacity = p.alpha;
+                mainStage.appendChild(pEl);
+                return true;
+            });
+
+            // --- TRAÎNÉES ---
+            trails = trails.filter(t => {
+                t.alpha -= 0.05; 
+                if (t.alpha <= 0) return false;
+
+                const trailEl = document.createElement('div');
+                trailEl.className = 'bullet-trail';
+                trailEl.style.width = `${t.width}px`;
+                trailEl.style.left = `${t.x}px`;
+                trailEl.style.top = `${t.y}px`;
+                trailEl.style.transform = `rotate(${t.rad}rad)`;
+                trailEl.style.opacity = t.alpha; 
+                mainStage.appendChild(trailEl);
+                return true;
+            });
+
+            // --- BALLES & COLLISIONS SÉCURISÉES ---
+            bullets = bullets.filter(b => {
+                const oldX = b.x;
+                const oldY = b.y;
+
+                b.x += b.vx; 
+                b.y += b.vy;
+
+                if (b.x < 0 || b.x > GAME_WIDTH || b.y < 0 || b.y > GAME_HEIGHT) return false;
+
+                let hitTarget = false;
+                guns.forEach(targetGun => {
+                    if (!targetGun.alive || targetGun.id === b.owner) return;
+
+                    const distToGun = Math.hypot(b.x - targetGun.x, b.y - targetGun.y);
+                    if (distToGun < 55) {
+                        hitTarget = true;
+                        explodeGun(targetGun);
+                        if (!isMatchOver) triggerWin(b.owner);
+                    }
+                });
+
+                if (hitTarget) return false;
+
+                const dist = Math.hypot(b.x - oldX, b.y - oldY);
+                const rad = Math.atan2(b.y - oldY, b.x - oldX);
+                trails.push({ x: oldX, y: oldY, width: dist * 1.5, rad: rad, alpha: 1.0 });
+
+                const bEl = document.createElement('div');
+                bEl.className = 'bullet';
+                bEl.style.left = `${b.x - 9}px`; 
+                bEl.style.top = `${b.y - 9}px`;
+                mainStage.appendChild(bEl);
+
+                return true;
+            });
+
+            // --- INTERACTION MAINS ---
+            handElements[0].style.display = "none";
+            handElements[1].style.display = "none";
+            if (playersState[0].cooldown > 0) playersState[0].cooldown--;
+            if (playersState[1].cooldown > 0) playersState[1].cooldown--;
+
+            if (!isMatchOver) {
+                let detectedHands = [];
+                lastHandsData.forEach((landmarks) => {
+                    if(landmarks && landmarks[5] && landmarks[8]) {
+                        const indexMcp = landmarks[5];
+                        const indexTip = landmarks[8];
+
+                        const rawX = (1 - indexMcp.x) * GAME_WIDTH;
+                        const rawY = indexMcp.y * GAME_HEIGHT;
+
+                        const indexDrop = indexTip.y - indexMcp.y;
+                        const triggerActive = indexDrop > 0.038; 
+
+                        detectedHands.push({ x: rawX, y: rawY, trigger: triggerActive });
+                    }
+                });
+
+                detectedHands.forEach((hand) => {
+                    let pIdx = hand.x < GAME_WIDTH / 2 ? 0 : 1;
+                    
+                    if (guns[pIdx].alive) {
+                        handElements[pIdx].style.display = "block";
+                        handElements[pIdx].style.left = `${hand.x - 15}px`;
+                        handElements[pIdx].style.top = `${hand.y - 15}px`;
+
+                        if (hand.trigger) {
+                            if (playersState[pIdx].triggerReady && playersState[pIdx].cooldown === 0) {
+                                shootGun(pIdx);
+                                playersState[pIdx].cooldown = 12; 
+                                playersState[pIdx].triggerReady = false; 
+                            }
+                        } else {
+                            playersState[pIdx].triggerReady = true; 
+                        }
+                    }
+                });
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function shootGun(index) {
+            const gun = guns[index];
+            if (!gun.alive) return;
+
+            const rad = (gun.angle) * Math.PI / 180;
+
+            // Comme le modèle visuel a été retourné vers la droite, le canon se situe maintenant 
+            // sur l'axe positif X. La distance du canon par rapport au pivot central est d'environ 68px.
+            const offsetCanon = 68; 
+            const bulletX = gun.x + Math.cos(rad) * offsetCanon;
+            const bulletY = gun.y + Math.sin(rad) * offsetCanon;
+
+            const bulletSpeed = 22;
+            const bVx = Math.cos(rad) * bulletSpeed;
+            const bVy = Math.sin(rad) * bulletSpeed;
+
+            bullets.push({ x: bulletX, y: bulletY, vx: bVx, vy: bVy, owner: index });
+
+            // Recul inversé (propulse le pistolet à l'opposé du tir)
+            gun.vx -= Math.cos(rad) * RECOIL_FORCE * 0.8;
+            gun.vy -= Math.sin(rad) * RECOIL_FORCE * 0.8;
+
+            let torque = 22 + Math.random() * 18; 
+            if (Math.random() > 0.75) {
+                torque = -torque;
+            }
+
+            gun.vAngle += torque;
+
+            if (gun.vAngle > MAX_ROTATION_SPEED) gun.vAngle = MAX_ROTATION_SPEED;
+            if (gun.vAngle < -MAX_ROTATION_SPEED) gun.vAngle = -MAX_ROTATION_SPEED;
+        }
+
+        initIA();
+    </script>
+</body>
+</html>
