@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Prototype V8 - Correction Direction Canon</title>
+    <title>Prototype V9 - Format vertical 9:16</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <style>
@@ -22,6 +22,7 @@
             justify-content: center;
             align-items: center;
         }
+        /* CHANGEMENT : ZONE DE JEU TOUJOURS EN 9:16 CENTRÉE */
         .game-area {
             position: relative;
             background: #09090e;
@@ -41,65 +42,65 @@
             z-index: 1;
             pointer-events: none;
         }
+        /* FUSILS 2X MOINS GROS (120px x 70px) */
         .gun {
             position: absolute;
-            width: 240px;
-            height: 140px;
+            width: 120px;
+            height: 70px;
             z-index: 10;
             transform-origin: center center;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 110px;
+            font-size: 55px; /* Émoji ajusté */
             pointer-events: none;
             transition: opacity 0.1s;
         }
-        /* RETOURNEMENT DE L'ÉMOJI POUR QU'IL POINTE VERS LA DROITE À 0 DEGRÉ */
         .gun-render {
             transform: scaleX(-1);
             display: inline-block;
         }
         .bullet {
             position: absolute;
-            width: 18px;
-            height: 18px;
+            width: 12px;
+            height: 12px;
             background: #ffffff;
             border-radius: 50%;
-            box-shadow: 0 0 15px #ffc107, 0 0 25px #ff4136;
+            box-shadow: 0 0 10px #ffc107, 0 0 20px #ff4136;
             z-index: 9;
             pointer-events: none;
         }
         .bullet-trail {
             position: absolute;
             background: linear-gradient(to left, rgba(255, 193, 7, 0.9), rgba(255, 65, 54, 0));
-            height: 8px;
-            border-radius: 4px;
+            height: 6px;
+            border-radius: 3px;
             transform-origin: left center;
             z-index: 8;
             pointer-events: none;
         }
         .explosion-particle {
             position: absolute;
-            width: 15px;
-            height: 15px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background: radial-gradient(circle, #fff, #ffc107, #ff4136);
-            box-shadow: 0 0 15px #ff4136;
+            box-shadow: 0 0 10px #ff4136;
             z-index: 15;
             pointer-events: none;
         }
         .hand-cursor {
             position: absolute;
-            width: 30px;
-            height: 30px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             z-index: 12;
             pointer-events: none;
             display: none;
-            border: 3px solid #fff;
+            border: 2px solid #fff;
         }
-        .color-p1 { background: #0dcaf0; box-shadow: 0 0 20px #0dcaf0; }
-        .color-p2 { background: #ff4136; box-shadow: 0 0 20px #ff4136; }
+        .color-p1 { background: #0dcaf0; box-shadow: 0 0 15px #0dcaf0; }
+        .color-p2 { background: #ff4136; box-shadow: 0 0 15px #ff4136; }
         
         #loadingOverlay {
             position: absolute;
@@ -122,7 +123,7 @@
     <div class="game-area" id="mainStage">
         <div id="loadingOverlay">
             <div id="spinner" class="spinner-border text-warning mb-3" role="status"></div>
-            <h3 id="statusText" class="fw-bold mb-4">Correction de l'orientation du canon...</h3>
+            <h3 id="statusText" class="fw-bold mb-4 text-center">Calibrage de l'arène 9:16...</h3>
             <button id="btnStart" class="btn btn-warning btn-lg fw-bold d-none px-4 py-3">LANCER LE MATCH</button>
         </div>
 
@@ -154,12 +155,13 @@
         let isRunning = false;
         let isMatchOver = false;
 
-        let GAME_WIDTH = 800;
-        let GAME_HEIGHT = 450;
+        // Dimensions par défaut en 9:16
+        let GAME_WIDTH = 450;
+        let GAME_HEIGHT = 800;
         
         const GRAVITY = 0.12; 
         const BOUNCE = -0.65; 
-        const RECOIL_FORCE = 13; 
+        const RECOIL_FORCE = 11; // Ajusté pour le poids du plus petit gun
         const MAX_ROTATION_SPEED = 35; 
         const ROTATION_FRICTION = 0.95; 
 
@@ -174,10 +176,10 @@
         ];
 
         function initGuns() {
-            // J1 pointe vers la droite (0°), J2 pointe vers la gauche (180°)
+            // Placement adapté au format vertical (J1 en haut, J2 un peu plus bas ou répartis sur la largeur)
             guns = [
-                { id: 0, x: 150, y: 200, vx: 1, vy: 0, angle: 0, vAngle: 0, width: 240, height: 140, alive: true },
-                { id: 1, x: 650, y: 200, vx: -1, vy: 0, angle: 180, vAngle: 0, width: 240, height: 140, alive: true }
+                { id: 0, x: GAME_WIDTH * 0.25, y: GAME_HEIGHT * 0.4, vx: 1, vy: 0, angle: 0, vAngle: 0, width: 120, height: 70, alive: true },
+                { id: 1, x: GAME_WIDTH * 0.75, y: GAME_HEIGHT * 0.4, vx: -1, vy: 0, angle: 180, vAngle: 0, width: 120, height: 70, alive: true }
             ];
             bullets = [];
             trails = [];
@@ -187,16 +189,19 @@
             gunElements[1].style.opacity = "1";
         }
 
+        // ADAPTATION RESPONSIVE SUR LE COTÉ LE MOINS LONG (Pour forcer le 9:16)
         function resizeResponsiveStage() {
             const screenW = window.innerWidth;
             const screenH = window.innerHeight;
 
-            if (screenW / screenH > 16 / 9) {
-                GAME_HEIGHT = screenH * 0.95; 
-                GAME_WIDTH = GAME_HEIGHT * (16 / 9);
+            if (screenW / screenH > 9 / 16) {
+                // Écran large (PC) : se calibrer sur la hauteur
+                GAME_HEIGHT = screenH * 0.95;
+                GAME_WIDTH = GAME_HEIGHT * (9 / 16);
             } else {
+                // Écran vertical (Mobile) : se calibrer sur la largeur
                 GAME_WIDTH = screenW * 0.95;
-                GAME_HEIGHT = GAME_WIDTH / (16 / 9);
+                GAME_HEIGHT = GAME_WIDTH / (9 / 16);
             }
 
             mainStage.style.width = `${GAME_WIDTH}px`;
@@ -220,7 +225,7 @@
                     minHandPresenceConfidence: 0.45
                 });
                 if(spinner) spinner.classList.add('d-none');
-                if(statusText) statusText.innerText = "Alignement du canon corrigé !";
+                if(statusText) statusText.innerText = "Arène verticale prête !";
                 if(btnStart) btnStart.classList.remove('d-none');
             } catch (err) {
                 if(statusText) statusText.innerText = "Erreur IA : " + err;
@@ -251,16 +256,16 @@
         function explodeGun(gun) {
             gun.alive = false;
             gunElements[gun.id].style.opacity = "0"; 
-            for (let i = 0; i < 45; i++) {
+            for (let i = 0; i < 30; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = 3 + Math.random() * 8;
+                const speed = 2 + Math.random() * 6;
                 particles.push({
                     x: gun.x,
                     y: gun.y,
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
                     alpha: 1.0,
-                    size: 8 + Math.random() * 12
+                    size: 5 + Math.random() * 8
                 });
             }
         }
@@ -271,7 +276,7 @@
             if(spinner) spinner.classList.add('d-none');
             
             const couleurText = winnerIndex === 0 ? "text-info" : "text-danger";
-            if(statusText) statusText.innerHTML = `<span class='${couleurText} display-4 fw-bold'>🏆 LE JOUEUR ${winnerIndex + 1} REMPORTE LE DUEL ! 🏆</span><br><small class='text-muted'>Nouveau round dans 3 secondes...</small>`;
+            if(statusText) statusText.innerHTML = `<span class='${couleurText} fs-3 fw-bold'>🏆 JOUEUR ${winnerIndex + 1} GAGNE ! 🏆</span><br><small class='text-muted'>Suivant dans 3s...</small>`;
 
             setTimeout(() => {
                 initGuns();
@@ -311,7 +316,6 @@
 
                 gunElements[idx].style.left = `${gun.x - gun.width/2}px`;
                 gunElements[idx].style.top = `${gun.y - gun.height/2}px`;
-                // Application de la rotation propre
                 gunElements[idx].style.transform = `rotate(${gun.angle}deg)`;
             });
 
@@ -322,7 +326,7 @@
 
             // --- PARTICULES ---
             particles = particles.filter(p => {
-                p.x += p.vx; p.y += p.vy; p.vy += 0.05; p.alpha -= 0.02;
+                p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.alpha -= 0.02;
                 if (p.alpha <= 0) return false;
 
                 const pEl = document.createElement('div');
@@ -336,7 +340,7 @@
 
             // --- TRAÎNÉES ---
             trails = trails.filter(t => {
-                t.alpha -= 0.05; 
+                t.alpha -= 0.06; 
                 if (t.alpha <= 0) return false;
 
                 const trailEl = document.createElement('div');
@@ -350,7 +354,7 @@
                 return true;
             });
 
-            // --- BALLES & COLLISIONS SÉCURISÉES ---
+            // --- BALLES & COLLISIONS SÉCURISÉES CORRIGÉES ---
             bullets = bullets.filter(b => {
                 const oldX = b.x;
                 const oldY = b.y;
@@ -365,7 +369,8 @@
                     if (!targetGun.alive || targetGun.id === b.owner) return;
 
                     const distToGun = Math.hypot(b.x - targetGun.x, b.y - targetGun.y);
-                    if (distToGun < 55) {
+                    // Rayon d'impact réduit de moitié proportionnellement au pistolet (30px au lieu de 55px)
+                    if (distToGun < 30) {
                         hitTarget = true;
                         explodeGun(targetGun);
                         if (!isMatchOver) triggerWin(b.owner);
@@ -380,8 +385,8 @@
 
                 const bEl = document.createElement('div');
                 bEl.className = 'bullet';
-                bEl.style.left = `${b.x - 9}px`; 
-                bEl.style.top = `${b.y - 9}px`;
+                bEl.style.left = `${b.x - 6}px`; 
+                bEl.style.top = `${b.y - 6}px`;
                 mainStage.appendChild(bEl);
 
                 return true;
@@ -415,8 +420,8 @@
                     
                     if (guns[pIdx].alive) {
                         handElements[pIdx].style.display = "block";
-                        handElements[pIdx].style.left = `${hand.x - 15}px`;
-                        handElements[pIdx].style.top = `${hand.y - 15}px`;
+                        handElements[pIdx].style.left = `${hand.x - 12}px`;
+                        handElements[pIdx].style.top = `${hand.y - 12}px`;
 
                         if (hand.trigger) {
                             if (playersState[pIdx].triggerReady && playersState[pIdx].cooldown === 0) {
@@ -440,9 +445,8 @@
 
             const rad = (gun.angle) * Math.PI / 180;
 
-            // Comme le modèle visuel a été retourné vers la droite, le canon se situe maintenant 
-            // sur l'axe positif X. La distance du canon par rapport au pivot central est d'environ 68px.
-            const offsetCanon = 68; 
+            // Recalcul précis de la sortie du canon sur le pistolet réduit (34px au lieu de 68px)
+            const offsetCanon = 34; 
             const bulletX = gun.x + Math.cos(rad) * offsetCanon;
             const bulletY = gun.y + Math.sin(rad) * offsetCanon;
 
@@ -452,7 +456,6 @@
 
             bullets.push({ x: bulletX, y: bulletY, vx: bVx, vy: bVy, owner: index });
 
-            // Recul inversé (propulse le pistolet à l'opposé du tir)
             gun.vx -= Math.cos(rad) * RECOIL_FORCE * 0.8;
             gun.vy -= Math.sin(rad) * RECOIL_FORCE * 0.8;
 
