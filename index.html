@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Prototype V9 - Format vertical 9:16</title>
+    <title>Prototype V10 - Couleurs Personnalisées & Spawns Aléatoires</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <style>
@@ -22,10 +22,9 @@
             justify-content: center;
             align-items: center;
         }
-        /* CHANGEMENT : ZONE DE JEU TOUJOURS EN 9:16 CENTRÉE */
         .game-area {
             position: relative;
-            background: #09090e;
+            background: #06060b;
             overflow: hidden;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
             border: 2px solid #333;
@@ -38,11 +37,10 @@
             height: 100%;
             transform: scaleX(-1);
             object-fit: cover;
-            opacity: 0.20;
+            opacity: 0.15;
             z-index: 1;
             pointer-events: none;
         }
-        /* FUSILS 2X MOINS GROS (120px x 70px) */
         .gun {
             position: absolute;
             width: 120px;
@@ -52,40 +50,50 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 55px; /* Émoji ajusté */
+            font-size: 55px;
             pointer-events: none;
             transition: opacity 0.1s;
+            border-radius: 15px;
         }
+        /* IDENTIFICATION VISUELLE DE COULEUR DES GUNS */
+        #gun0 { filter: drop-shadow(0 0 15px #0dcaf0); }
+        #gun1 filter { filter: drop-shadow(0 0 15px #ff4136); }
+
         .gun-render {
             transform: scaleX(-1);
             display: inline-block;
         }
+        
+        /* COULEURS DES BALLES DÉTAILLÉES */
         .bullet {
             position: absolute;
             width: 12px;
             height: 12px;
-            background: #ffffff;
             border-radius: 50%;
-            box-shadow: 0 0 10px #ffc107, 0 0 20px #ff4136;
+            background: #ffffff;
             z-index: 9;
             pointer-events: none;
         }
+        .bullet-blue { box-shadow: 0 0 10px #0dcaf0, 0 0 20px #005f73; }
+        .bullet-red { box-shadow: 0 0 10px #ff4136, 0 0 20px #9b2226; }
+
+        /* GRADIENTS DE TRAÎNÉES INDIVIDUELS */
         .bullet-trail {
             position: absolute;
-            background: linear-gradient(to left, rgba(255, 193, 7, 0.9), rgba(255, 65, 54, 0));
             height: 6px;
             border-radius: 3px;
             transform-origin: left center;
             z-index: 8;
             pointer-events: none;
         }
+        .trail-blue { background: linear-gradient(to left, rgba(13, 202, 240, 0.9), rgba(0, 95, 115, 0)); }
+        .trail-red { background: linear-gradient(to left, rgba(255, 65, 54, 0.9), rgba(155, 34, 38, 0)); }
+
         .explosion-particle {
             position: absolute;
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            background: radial-gradient(circle, #fff, #ffc107, #ff4136);
-            box-shadow: 0 0 10px #ff4136;
             z-index: 15;
             pointer-events: none;
         }
@@ -123,8 +131,8 @@
     <div class="game-area" id="mainStage">
         <div id="loadingOverlay">
             <div id="spinner" class="spinner-border text-warning mb-3" role="status"></div>
-            <h3 id="statusText" class="fw-bold mb-4 text-center">Calibrage de l'arène 9:16...</h3>
-            <button id="btnStart" class="btn btn-warning btn-lg fw-bold d-none px-4 py-3">LANCER LE MATCH</button>
+            <h3 id="statusText" class="fw-bold mb-4 text-center">Génération des couleurs...</h3>
+            <button id="btnStart" class="btn btn-warning btn-lg fw-bold d-none px-4 py-3">LANCER LE DUEL</button>
         </div>
 
         <video id="webcam" autoplay playsinline></video>
@@ -155,13 +163,12 @@
         let isRunning = false;
         let isMatchOver = false;
 
-        // Dimensions par défaut en 9:16
         let GAME_WIDTH = 450;
         let GAME_HEIGHT = 800;
         
         const GRAVITY = 0.12; 
         const BOUNCE = -0.65; 
-        const RECOIL_FORCE = 11; // Ajusté pour le poids du plus petit gun
+        const RECOIL_FORCE = 11; 
         const MAX_ROTATION_SPEED = 35; 
         const ROTATION_FRICTION = 0.95; 
 
@@ -175,12 +182,22 @@
             { triggerReady: true, cooldown: 0 }
         ];
 
+        // CONFIGURATION DES COORDONNÉES DE DÉPART ALÉATOIRES (SPAWNS)
         function initGuns() {
-            // Placement adapté au format vertical (J1 en haut, J2 un peu plus bas ou répartis sur la largeur)
+            // J1 (Bleu) à gauche : X entre 15% et 40% de la largeur
+            const randomX1 = GAME_WIDTH * (0.15 + Math.random() * 0.25);
+            // J2 (Rouge) à droite : X entre 60% et 85% de la largeur
+            const randomX2 = GAME_WIDTH * (0.60 + Math.random() * 0.25);
+            
+            // Hauteur aléatoire Y pour les deux entre 25% et 65% de la map
+            const randomY1 = GAME_HEIGHT * (0.25 + Math.random() * 0.40);
+            const randomY2 = GAME_HEIGHT * (0.25 + Math.random() * 0.40);
+
             guns = [
-                { id: 0, x: GAME_WIDTH * 0.25, y: GAME_HEIGHT * 0.4, vx: 1, vy: 0, angle: 0, vAngle: 0, width: 120, height: 70, alive: true },
-                { id: 1, x: GAME_WIDTH * 0.75, y: GAME_HEIGHT * 0.4, vx: -1, vy: 0, angle: 180, vAngle: 0, width: 120, height: 70, alive: true }
+                { id: 0, x: randomX1, y: randomY1, vx: 0.5, vy: 0, angle: 0, vAngle: 0, width: 120, height: 70, alive: true, color: '#0dcaf0' },
+                { id: 1, x: randomX2, y: randomY2, vx: -0.5, vy: 0, angle: 180, vAngle: 0, width: 120, height: 70, alive: true, color: '#ff4136' }
             ];
+            
             bullets = [];
             trails = [];
             particles = [];
@@ -189,17 +206,14 @@
             gunElements[1].style.opacity = "1";
         }
 
-        // ADAPTATION RESPONSIVE SUR LE COTÉ LE MOINS LONG (Pour forcer le 9:16)
         function resizeResponsiveStage() {
             const screenW = window.innerWidth;
             const screenH = window.innerHeight;
 
             if (screenW / screenH > 9 / 16) {
-                // Écran large (PC) : se calibrer sur la hauteur
                 GAME_HEIGHT = screenH * 0.95;
                 GAME_WIDTH = GAME_HEIGHT * (9 / 16);
             } else {
-                // Écran vertical (Mobile) : se calibrer sur la largeur
                 GAME_WIDTH = screenW * 0.95;
                 GAME_HEIGHT = GAME_WIDTH / (9 / 16);
             }
@@ -225,7 +239,7 @@
                     minHandPresenceConfidence: 0.45
                 });
                 if(spinner) spinner.classList.add('d-none');
-                if(statusText) statusText.innerText = "Arène verticale prête !";
+                if(statusText) statusText.innerText = "Spawns aléatoires synchronisés !";
                 if(btnStart) btnStart.classList.remove('d-none');
             } catch (err) {
                 if(statusText) statusText.innerText = "Erreur IA : " + err;
@@ -256,7 +270,7 @@
         function explodeGun(gun) {
             gun.alive = false;
             gunElements[gun.id].style.opacity = "0"; 
-            for (let i = 0; i < 30; i++) {
+            for (let i = 0; i < 35; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 2 + Math.random() * 6;
                 particles.push({
@@ -265,7 +279,8 @@
                     vx: Math.cos(angle) * speed,
                     vy: Math.sin(angle) * speed,
                     alpha: 1.0,
-                    size: 5 + Math.random() * 8
+                    size: 5 + Math.random() * 8,
+                    color: gun.color // Particules de la couleur du pistolet brisé
                 });
             }
         }
@@ -275,8 +290,8 @@
             if(loadingOverlay) loadingOverlay.classList.remove('d-none');
             if(spinner) spinner.classList.add('d-none');
             
-            const couleurText = winnerIndex === 0 ? "text-info" : "text-danger";
-            if(statusText) statusText.innerHTML = `<span class='${couleurText} fs-3 fw-bold'>🏆 JOUEUR ${winnerIndex + 1} GAGNE ! 🏆</span><br><small class='text-muted'>Suivant dans 3s...</small>`;
+            const couleurClass = winnerIndex === 0 ? "text-info" : "text-danger";
+            if(statusText) statusText.innerHTML = `<span class='${couleurClass} fs-3 fw-bold'>🏆 JOUEUR ${winnerIndex + 1} REMPORTE LE ROUND ! 🏆</span><br><small class='text-muted'>Nouveaux spawns dans 3s...</small>`;
 
             setTimeout(() => {
                 initGuns();
@@ -324,7 +339,7 @@
             document.querySelectorAll('.bullet-trail').forEach(t => t.remove());
             document.querySelectorAll('.explosion-particle').forEach(p => p.remove());
 
-            // --- PARTICULES ---
+            // --- PARTICULES SÉLECTIONNÉES PAR COULEUR ---
             particles = particles.filter(p => {
                 p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.alpha -= 0.02;
                 if (p.alpha <= 0) return false;
@@ -334,17 +349,20 @@
                 pEl.style.width = `${p.size}px`; pEl.style.height = `${p.size}px`;
                 pEl.style.left = `${p.x}px`; pEl.style.top = `${p.y}px`;
                 pEl.style.opacity = p.alpha;
+                pEl.style.background = `radial-gradient(circle, #fff, ${p.color})`;
+                pEl.style.boxShadow = `0 0 10px ${p.color}`;
                 mainStage.appendChild(pEl);
                 return true;
             });
 
-            // --- TRAÎNÉES ---
+            // --- TRAÎNÉES INDIVIDUELLES ---
             trails = trails.filter(t => {
                 t.alpha -= 0.06; 
                 if (t.alpha <= 0) return false;
 
                 const trailEl = document.createElement('div');
-                trailEl.className = 'bullet-trail';
+                // Application de la classe de couleur de traînée appropriée
+                trailEl.className = `bullet-trail ${t.owner === 0 ? 'trail-blue' : 'trail-red'}`;
                 trailEl.style.width = `${t.width}px`;
                 trailEl.style.left = `${t.x}px`;
                 trailEl.style.top = `${t.y}px`;
@@ -354,7 +372,7 @@
                 return true;
             });
 
-            // --- BALLES & COLLISIONS SÉCURISÉES CORRIGÉES ---
+            // --- BALLES AVEC DISTRIBUTION COULEUR ---
             bullets = bullets.filter(b => {
                 const oldX = b.x;
                 const oldY = b.y;
@@ -369,7 +387,6 @@
                     if (!targetGun.alive || targetGun.id === b.owner) return;
 
                     const distToGun = Math.hypot(b.x - targetGun.x, b.y - targetGun.y);
-                    // Rayon d'impact réduit de moitié proportionnellement au pistolet (30px au lieu de 55px)
                     if (distToGun < 30) {
                         hitTarget = true;
                         explodeGun(targetGun);
@@ -381,10 +398,12 @@
 
                 const dist = Math.hypot(b.x - oldX, b.y - oldY);
                 const rad = Math.atan2(b.y - oldY, b.x - oldX);
-                trails.push({ x: oldX, y: oldY, width: dist * 1.5, rad: rad, alpha: 1.0 });
+                // On passe le owner au trail pour savoir s'il doit s'afficher en rouge ou bleu
+                trails.push({ x: oldX, y: oldY, width: dist * 1.5, rad: rad, alpha: 1.0, owner: b.owner });
 
                 const bEl = document.createElement('div');
-                bEl.className = 'bullet';
+                // Attribution dynamique de la classe couleur de balle (.bullet-blue ou .bullet-red)
+                bEl.className = `bullet ${b.owner === 0 ? 'bullet-blue' : 'bullet-red'}`;
                 bEl.style.left = `${b.x - 6}px`; 
                 bEl.style.top = `${b.y - 6}px`;
                 mainStage.appendChild(bEl);
@@ -445,7 +464,6 @@
 
             const rad = (gun.angle) * Math.PI / 180;
 
-            // Recalcul précis de la sortie du canon sur le pistolet réduit (34px au lieu de 68px)
             const offsetCanon = 34; 
             const bulletX = gun.x + Math.cos(rad) * offsetCanon;
             const bulletY = gun.y + Math.sin(rad) * offsetCanon;
