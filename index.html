@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Prototype V15 - Recul Massif +50%</title>
+    <title>Prototype V19 - Plein Écran 1P & CPU Mobile</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <style>
@@ -127,8 +127,12 @@
     <div class="game-area" id="mainStage">
         <div id="loadingOverlay">
             <div id="spinner" class="spinner-border text-warning mb-3" role="status"></div>
-            <h3 id="statusText" class="fw-bold mb-4 text-center">Augmentation de l'impact de recul...</h3>
-            <button id="btnStart" class="btn btn-warning btn-lg fw-bold d-none px-4 py-3">LANCER LE DUEL</button>
+            <h3 id="statusText" class="fw-bold mb-4 text-center">Libération de l'espace joueur...</h3>
+            
+            <div id="menuButtons" class="d-none text-center">
+                <button id="btn1P" class="btn btn-primary btn-lg fw-bold m-2 px-4 py-3">👤 1 JOUEUR (vs CPU)</button>
+                <button id="btn2P" class="btn btn-danger btn-lg fw-bold m-2 px-4 py-3">⚔️ 2 JOUEURS (Local)</button>
+            </div>
         </div>
 
         <video id="webcam" autoplay playsinline></video>
@@ -148,7 +152,9 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
         const statusText = document.getElementById('statusText');
         const spinner = document.getElementById('spinner');
-        const btnStart = document.getElementById('btnStart');
+        const btn1P = document.getElementById('btn1P');
+        const btn2P = document.getElementById('btn2P');
+        const menuButtons = document.getElementById('menuButtons');
         
         const gunElements = [document.getElementById('gun0'), document.getElementById('gun1')];
         const handElements = [document.getElementById('hand0'), document.getElementById('hand1')];
@@ -158,16 +164,14 @@
         let lastHandsData = [];
         let isRunning = false;
         let isMatchOver = false;
+        let gameMode = 2; 
 
         let GAME_WIDTH = 450;
         let GAME_HEIGHT = 800;
         
         const GRAVITY = 0.08; 
         const BOUNCE = -0.55; 
-        
-        // MODIFICATION : Puissance du recul augmentée de plus de 50% (7 -> 12) pour un impact massif !
         const RECOIL_FORCE = 12; 
-        
         const MAX_ROTATION_SPEED = 18; 
         const ROTATION_FRICTION = 0.982; 
 
@@ -237,15 +241,16 @@
                     minHandPresenceConfidence: 0.45
                 });
                 if(spinner) spinner.classList.add('d-none');
-                if(statusText) statusText.innerText = "Recul maximal activé !";
-                if(btnStart) btnStart.classList.remove('d-none');
+                if(statusText) statusText.innerText = "Sélectionne le mode de jeu :";
+                if(menuButtons) menuButtons.classList.remove('d-none');
             } catch (err) {
                 if(statusText) statusText.innerText = "Erreur IA : " + err;
             }
         }
 
-        btnStart.addEventListener('click', async () => {
-            btnStart.classList.add('d-none');
+        async function launchGame(mode) {
+            gameMode = mode;
+            if(menuButtons) menuButtons.classList.add('d-none');
             if(spinner) spinner.classList.remove('d-none');
             statusText.innerText = "Démarrage caméra...";
 
@@ -263,7 +268,10 @@
             } catch (err) {
                 alert("Impossible d'accéder à la webcam.");
             }
-        });
+        }
+
+        btn1P.addEventListener('click', () => launchGame(1));
+        btn2P.addEventListener('click', () => launchGame(2));
 
         function explodeGun(gun) {
             gun.alive = false;
@@ -290,7 +298,14 @@
                 
                 const couleurClass = winnerIndex === 0 ? "text-primary" : "text-danger";
                 const nomJoueur = winnerIndex === 0 ? "BLEU" : "ROUGE";
-                if(statusText) statusText.innerHTML = `<span class='${couleurClass} fs-3 fw-bold'>🏆 LE JOUEUR ${nomJoueur} GAGNE ! 🏆</span><br><small class='text-muted'>Prochain round dans 2s...</small>`;
+                
+                if (gameMode === 1) {
+                    statusText.innerHTML = winnerIndex === 0 ? 
+                        `<span class='text-primary fs-3 fw-bold'>🏆 VICTOIRE ! 🏆</span><br><small class='text-muted'>Round suivant dans 2s...</small>` : 
+                        `<span class='text-danger fs-3 fw-bold'>💥 GAME OVER 💥</span><br><small class='text-muted'>Revanche dans 2s...</small>`;
+                } else {
+                    statusText.innerHTML = `<span class='${couleurClass} fs-3 fw-bold'>🏆 LE JOUEUR ${nomJoueur} GAGNE ! 🏆</span><br><small class='text-muted'>Prochain round dans 2s...</small>`;
+                }
 
                 setTimeout(() => {
                     initGuns();
@@ -334,7 +349,31 @@
                 gunElements[idx].style.transform = `rotate(${gun.angle}deg)`;
             });
 
-            // --- NETTOYAGE APPRÈS FRAME ---
+            // --- LOGIQUE AUTONOME DU CPU (MODE 1 JOUEUR) ---
+            if (gameMode === 1 && guns[1].alive && !isMatchOver) {
+                if (playersState[1].cooldown > 0) {
+                    playersState[1].cooldown--;
+                } else {
+                    const radCPU = (guns[1].angle) * Math.PI / 180;
+                    const dx = guns[0].x - guns[1].x;
+                    const dy = guns[0].y - guns[1].y;
+                    const angleToPlayer = Math.atan2(dy, dx);
+                    
+                    let diffAngle = angleToPlayer - radCPU;
+                    diffAngle = Math.atan2(Math.sin(diffAngle), Math.cos(diffAngle));
+
+                    if (Math.abs(diffAngle) < 0.40) {
+                        const dispersion = (-0.18 + Math.random() * 0.36); 
+                        shootGun(1, dispersion);
+                        playersState[1].cooldown = 18; 
+                    } else { 
+                        shootGun(1, 0); 
+                        playersState[1].cooldown = 14; 
+                    }
+                }
+            }
+
+            // --- NETTOYAGE VISUEL ---
             document.querySelectorAll('.bullet').forEach(b => b.remove());
             document.querySelectorAll('.bullet-trail').forEach(t => t.remove());
             document.querySelectorAll('.explosion-particle').forEach(p => p.remove());
@@ -409,11 +448,11 @@
                 return true;
             });
 
-            // --- INTERACTION MAINS ---
+            // --- INTERACTION MAINS CORRIGÉE POUR LE FULL-SCREEN 1P ---
             handElements[0].style.display = "none";
             handElements[1].style.display = "none";
             if (playersState[0].cooldown > 0) playersState[0].cooldown--;
-            if (playersState[1].cooldown > 0) playersState[1].cooldown--;
+            if (gameMode === 2 && playersState[1].cooldown > 0) playersState[1].cooldown--;
 
             if (!isMatchOver) {
                 let detectedHands = [];
@@ -433,8 +472,9 @@
                 });
 
                 detectedHands.forEach((hand) => {
-                    let pIdx = hand.x < GAME_WIDTH / 2 ? 0 : 1;
-                    
+                    // CHANGEMENT CLÉ : En mode 1 Joueur, pIdx reste toujours 0 (Bleu), peu importe la position X sur l'écran !
+                    let pIdx = (gameMode === 1) ? 0 : (hand.x < GAME_WIDTH / 2 ? 0 : 1);
+
                     if (guns[pIdx].alive) {
                         handElements[pIdx].style.display = "block";
                         handElements[pIdx].style.left = `${hand.x - 12}px`;
@@ -442,7 +482,7 @@
 
                         if (hand.trigger) {
                             if (playersState[pIdx].triggerReady && playersState[pIdx].cooldown === 0) {
-                                shootGun(pIdx);
+                                shootGun(pIdx, 0); 
                                 playersState[pIdx].cooldown = 12; 
                                 playersState[pIdx].triggerReady = false; 
                             }
@@ -456,11 +496,11 @@
             requestAnimationFrame(gameLoop);
         }
 
-        function shootGun(index) {
+        function shootGun(index, angleModifier = 0) {
             const gun = guns[index];
             if (!gun.alive) return;
 
-            const rad = (gun.angle) * Math.PI / 180;
+            const rad = ((gun.angle) * Math.PI / 180) + angleModifier;
 
             const offsetCanon = 44; 
             const bulletX = gun.x + Math.cos(rad) * offsetCanon;
@@ -472,7 +512,6 @@
 
             bullets.push({ x: bulletX, y: bulletY, vx: bVx, vy: bVy, owner: index });
 
-            // Application de la force vectorielle de recul (maintenant à 12, ultra sensible !)
             gun.vx -= Math.cos(rad) * RECOIL_FORCE * 0.8;
             gun.vy -= Math.sin(rad) * RECOIL_FORCE * 0.8;
 
